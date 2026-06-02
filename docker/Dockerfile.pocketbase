@@ -1,0 +1,45 @@
+# Standalone PocketBase image for the Kubernetes deployment (see k8s/).
+# PocketBase is a single static Go binary, so a plain alpine base is enough —
+# no Node runtime needed (unlike the monolithic docker/Dockerfile).
+# Build context = repo root:  docker build -f docker/Dockerfile.pocketbase -t starter-ware-pocketbase:local .
+
+# Fetch the PocketBase binary (mirrors the deps stage of docker/Dockerfile).
+FROM alpine:3.20 AS fetch
+RUN apk add --no-cache curl unzip
+ARG POCKETBASE_VERSION=0.32.4
+ARG POCKETBASE_ARCH=amd64
+RUN curl -L "https://github.com/pocketbase/pocketbase/releases/download/v${POCKETBASE_VERSION}/pocketbase_${POCKETBASE_VERSION}_linux_${POCKETBASE_ARCH}.zip" \
+      -o /tmp/pocketbase.zip && \
+    unzip /tmp/pocketbase.zip -d /pb && \
+    chmod +x /pb/pocketbase && \
+    rm /tmp/pocketbase.zip
+
+# Runtime image
+FROM alpine:3.20 AS runner
+RUN apk add --no-cache ca-certificates
+
+# Non-root user (matches the uid/gid used in the k8s securityContext)
+RUN addgroup -S -g 1001 pb && adduser -S -u 1001 -G pb pb
+
+WORKDIR /app/pb
+
+# Binary + hooks + migrations are code, baked into the image. Runtime state
+# (pb_data) lives on a mounted volume and is intentionally NOT copied.
+COPY --from=fetch /pb/pocketbase ./pocketbase
+COPY --chown=pb:pb pocketbase/pb_hooks ./pb_hooks
+COPY --chown=pb:pb pocketbase/pb_migrations ./pb_migrations
+
+# /data holds the SQLite DB + file uploads; mount a PersistentVolume here.
+RUN mkdir -p /data/pb_data && chown -R pb:pb /data
+
+USER pb
+EXPOSE 8090
+
+# Serve flags mirror docker/supervisord.conf. PocketBase auto-applies migrations
+# on boot; an empty volume starts with no superuser (create one via
+# `pocketbase superuser upsert` — see k8s/README.md).
+ENTRYPOINT ["./pocketbase", "serve", \
+  "--http=0.0.0.0:8090", \
+  "--dir=/data/pb_data", \
+  "--hooksDir=/app/pb/pb_hooks", \
+  "--migrationsDir=/app/pb/pb_migrations"]

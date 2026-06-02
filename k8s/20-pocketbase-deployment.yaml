@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pocketbase
+  namespace: starter-ware
+  labels:
+    app: pocketbase
+    app.kubernetes.io/part-of: starter-ware
+spec:
+  # PocketBase uses an embedded single-file SQLite DB on one RWO volume.
+  # replicas MUST stay at 1, and the strategy MUST be Recreate: RollingUpdate
+  # would briefly run two pods contending for the same volume/DB file
+  # (Multi-Attach error / "database is locked"). Recreate fully stops the old
+  # pod (releasing the volume) before starting the new one.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: pocketbase
+  template:
+    metadata:
+      labels:
+        app: pocketbase
+        app.kubernetes.io/part-of: starter-ware
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        # Ensures the (root-provisioned) PVC is group-writable by uid 1001.
+        fsGroup: 1001
+      containers:
+        - name: pocketbase
+          image: starter-ware-pocketbase:local
+          # Local images are loaded into the cluster (kind/minikube), not pulled
+          # from a registry — Always would fail with ErrImagePull.
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8090
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8090
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: pocketbase-data

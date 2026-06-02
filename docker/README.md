@@ -2,6 +2,8 @@
 
 Single-container deployment of the Next.js webapp + PocketBase + Nginx, supervised by `supervisord`. All runtime state lives under `/data` — bind-mount that one path and you're done.
 
+> For a multi-pod **Kubernetes** deployment (PocketBase and Next.js as separate pods, with an Ingress in place of nginx), see [k8s/README.md](../k8s/README.md).
+
 ## Architecture
 
 - **Nginx** (port 80) — reverse proxy, public entry point

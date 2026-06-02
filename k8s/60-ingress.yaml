@@ -1,0 +1,53 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: starter-ware
+  namespace: starter-ware
+  labels:
+    app.kubernetes.io/part-of: starter-ware
+  annotations:
+    # Replicates the monolith nginx config (docker/nginx.conf):
+    # client_max_body_size 150M + long timeouts and disabled buffering for
+    # PocketBase realtime (WebSocket) and large file uploads/downloads.
+    nginx.ingress.kubernetes.io/proxy-body-size: "150m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: nginx
+  # Host-less so http://localhost/ works out of the box on kind (with
+  # extraPortMappings) and minikube. To use a hostname instead, set `host:`
+  # under the rule below and add it to /etc/hosts (see k8s/README.md).
+  rules:
+    - http:
+        paths:
+          # Most-specific prefixes first. ingress-nginx matches by longest
+          # prefix, so /api and /_ win over the "/" catch-all.
+          # PocketBase API (includes /api/files/) — browser hits this same-origin
+          # because NEXT_PUBLIC_POCKETBASE_URL is "/".
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: pocketbase
+                port:
+                  number: 8090
+          # PocketBase admin UI (/_/...).
+          - path: /_
+            pathType: Prefix
+            backend:
+              service:
+                name: pocketbase
+                port:
+                  number: 8090
+          # Everything else → Next.js.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: webapp
+                port:
+                  number: 3000
+# Note: the monolith's /health alias (nginx rewrote /health → /api/health) is
+# intentionally omitted. Kubernetes probes hit /api/health on the pod directly,
+# and an Ingress prefix rule cannot rewrite the path without a rewrite-target hack.
