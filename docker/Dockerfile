@@ -12,7 +12,6 @@ RUN corepack enable && corepack prepare yarn@4.12.0 --activate
 # Copy package files
 COPY package.json yarn.lock .yarnrc.yml* ./
 COPY webapp/package.json ./webapp/
-COPY shared/package.json ./shared/
 # Source path is pocketbase/ for local-dev clarity; in-image path stays /app/pb/
 COPY pocketbase/package.json ./pb/
 
@@ -20,7 +19,8 @@ COPY pocketbase/package.json ./pb/
 RUN yarn install --immutable
 
 # Download PocketBase binary
-ARG POCKETBASE_VERSION=0.32.4
+# Fallback only — CI passes --build-arg POCKETBASE_VERSION from .env.example.
+ARG POCKETBASE_VERSION=0.39.2
 ARG POCKETBASE_ARCH=amd64
 RUN mkdir -p /app/pb && \
     curl -L "https://github.com/pocketbase/pocketbase/releases/download/v${POCKETBASE_VERSION}/pocketbase_${POCKETBASE_VERSION}_linux_${POCKETBASE_ARCH}.zip" \
@@ -44,11 +44,7 @@ COPY --from=deps /app/pb/pocketbase ./pb/pocketbase
 # Copy workspace files
 COPY package.json yarn.lock .yarnrc.yml* ./
 COPY webapp ./webapp
-COPY shared ./shared
 COPY pocketbase ./pb
-
-# Build shared package first (required by webapp)
-RUN yarn workspace @template-ware/shared build
 
 # Build Next.js application
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -94,6 +90,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/pb/pocketbase ./pb/pocketbase
 COPY --from=builder --chown=nextjs:nodejs /app/pb/pb_hooks ./pb/pb_hooks
 COPY --from=builder --chown=nextjs:nodejs /app/pb/pb_migrations ./pb/pb_migrations
 
+# PocketBase launch wrapper — auto-provisions a superuser when admin creds are in
+# the env, otherwise falls through to plain `serve` (setup URL printed on first boot).
+COPY --chown=nextjs:nodejs docker/pb-entrypoint.sh ./pb/pb-entrypoint.sh
+RUN chmod +x ./pb/pb-entrypoint.sh
+
 # Single /data volume holds all runtime state (PocketBase DB, file uploads,
 # any future app-level dynamic storage). Bake the directory + ownership in so
 # the image runs out-of-the-box without a host mount, and works with one when
@@ -109,7 +110,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/.yarn ./.yarn
 
 # Copy workspace package.json files
 COPY --from=builder --chown=nextjs:nodejs /app/webapp/package.json ./webapp/
-COPY --from=builder --chown=nextjs:nodejs /app/shared/package.json ./shared/
 COPY --from=builder --chown=nextjs:nodejs /app/pb/package.json ./pb/
 
 # Install production dependencies only
@@ -121,9 +121,6 @@ COPY --from=builder --chown=nextjs:nodejs /app/webapp/.next ./webapp/.next
 COPY --from=builder --chown=nextjs:nodejs /app/webapp/public ./webapp/public
 COPY --from=builder --chown=nextjs:nodejs /app/webapp/next.config.ts ./webapp/next.config.ts
 COPY --from=builder --chown=nextjs:nodejs /app/webapp/tsconfig.json ./webapp/tsconfig.json
-
-# Copy shared package dist
-COPY --from=builder --chown=nextjs:nodejs /app/shared/dist ./shared/dist
 
 # Copy supervisor and nginx configs
 COPY --chown=root:root docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf

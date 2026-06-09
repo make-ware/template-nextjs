@@ -21,11 +21,14 @@ From the repo root:
 docker build -f docker/Dockerfile -t template-ware .
 ```
 
-Pin a specific PocketBase release at build time:
+The PocketBase version is sourced from [`.env.example`](../.env.example)
+(`POCKETBASE_VERSION`) — that's the single place to bump it, and CI reads it from
+there. The Dockerfile `ARG` default is only a fallback for a plain `docker build`.
+Override it for a one-off build:
 
 ```bash
 docker build -f docker/Dockerfile \
-  --build-arg POCKETBASE_VERSION=0.32.4 \
+  --build-arg POCKETBASE_VERSION=0.39.2 \
   --build-arg POCKETBASE_ARCH=amd64 \
   -t template-ware .
 ```
@@ -46,7 +49,9 @@ Routes:
 - `/_/` → PocketBase admin UI
 - `/health` → PocketBase health probe
 
-First boot: visit `/_/` to create the PocketBase admin account.
+First boot: visit `/_/` to create the PocketBase admin account. To skip that and
+provision the superuser automatically, pass `POCKETBASE_ADMIN_EMAIL` and
+`POCKETBASE_ADMIN_PASSWORD` at `docker run` time (see [Environment variables](#environment-variables)).
 
 ## The `/data` contract
 
@@ -81,10 +86,24 @@ docker run -d --name template-ware \
   -v $PWD/data:/data \
   -e NEXT_PUBLIC_POCKETBASE_URL=https://your-domain/api \
   -e NODE_ENV=production \
+  -e POCKETBASE_ADMIN_EMAIL=admin@your-domain \
+  -e POCKETBASE_ADMIN_PASSWORD='a-strong-password' \
   template-ware
 ```
 
 See [.env.example](../.env.example) for the full list.
+
+### Superuser provisioning
+
+When both `POCKETBASE_ADMIN_EMAIL` and `POCKETBASE_ADMIN_PASSWORD` are present in the
+container env, the PocketBase entrypoint runs an idempotent `superuser upsert` before
+starting the server — so a fresh deploy comes up with that superuser already created
+(and re-running with the same vars resets the password). It's safe to leave them set
+across restarts.
+
+Omit them to keep PocketBase's default behavior: on first boot it prints a one-time
+setup URL (`/_/#/pbinstal/...`) to the logs — find it with
+`docker logs <container>` — and you create the account through the admin UI.
 
 ## Logs
 
@@ -97,9 +116,35 @@ Supervisor writes per-process logs inside the container:
 
 Tail them with `docker exec <container> tail -f /var/log/supervisor/supervisord.log`.
 
+## Published images (CI / release-please)
+
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) publishes all three
+images to **GitHub Container Registry** on every release:
+
+| Image | Dockerfile | Contents |
+|-------|------------|----------|
+| `ghcr.io/<owner>/<repo>/monolith` | [Dockerfile](Dockerfile) | All-in-one (Next.js + PocketBase + nginx) |
+| `ghcr.io/<owner>/<repo>/webapp` | [Dockerfile.webapp](Dockerfile.webapp) | Next.js standalone server (for k8s) |
+| `ghcr.io/<owner>/<repo>/pocketbase` | [Dockerfile.pocketbase](Dockerfile.pocketbase) | PocketBase + hooks + migrations (for k8s) |
+
+**Versioning** is driven by [release-please](https://github.com/googleapis/release-please)
+using Conventional Commits (`feat:`, `fix:`, `feat!:`/`BREAKING CHANGE:`). It keeps a
+release PR open on `main`; merging it cuts a `vX.Y.Z` tag + GitHub release and updates
+[CHANGELOG.md](../CHANGELOG.md). That release run then builds and pushes the images, tagged
+`X.Y.Z`, `X.Y`, `X`, and `latest`. All three images share one version.
+
+**Multi-arch & compute:** each image is built for `linux/amd64` and `linux/arm64` on a
+**native** runner in parallel (no QEMU), pushed by digest, then merged into one multi-arch
+manifest per image. Layer caching is scoped per image+arch via the Actions cache.
+
+No registry secret is needed — the workflow authenticates with the built-in `GITHUB_TOKEN`
+(`packages: write`). New packages default to private; make them public via the package
+settings on GitHub if desired.
+
 ## Files in this directory
 
 - [Dockerfile](Dockerfile) — multi-stage build
-- [supervisord.conf](supervisord.conf) — process definitions; PocketBase invocation pins `--dir=/data/pb_data` plus `--hooksDir` / `--migrationsDir` against the in-image paths
+- [supervisord.conf](supervisord.conf) — process definitions; PocketBase is launched through `pb-entrypoint.sh` with `--dir=/data/pb_data` plus `--hooksDir` / `--migrationsDir` pinned against the in-image paths
+- [pb-entrypoint.sh](pb-entrypoint.sh) — PocketBase launch wrapper (shared with [Dockerfile.pocketbase](Dockerfile.pocketbase)); upserts a superuser when admin creds are in the env, then execs `serve`
 - [nginx.conf](nginx.conf) — reverse-proxy routing, websocket support for PocketBase realtime
 - [start.sh](start.sh) — entrypoint that execs supervisord

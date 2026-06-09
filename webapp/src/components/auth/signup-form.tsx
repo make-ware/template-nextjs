@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { RegisterSchema } from '@template-ware/shared/schema';
 import type { RegisterData } from '@template-ware/shared/schema';
@@ -55,14 +55,14 @@ export function SignupForm({ onSuccess, redirectTo }: SignupFormProps) {
     register,
     handleSubmit,
     formState: { errors },
-    watch,
+    control,
     setError,
   } = useForm<RegisterData>({
     resolver: zodResolver(RegisterSchema),
     mode: 'onChange', // Enable real-time validation
   });
 
-  const watchedPassword = watch('password', '');
+  const watchedPassword = useWatch({ control, name: 'password' }) ?? '';
   const passwordStrength = calculatePasswordStrength(watchedPassword);
 
   const onSubmit = async (data: RegisterData) => {
@@ -80,9 +80,9 @@ export function SignupForm({ onSuccess, redirectTo }: SignupFormProps) {
       if (onSuccess) {
         onSuccess();
       } else if (redirectTo) {
-        window.location.href = redirectTo;
+        window.location.assign(redirectTo);
       } else {
-        window.location.href = '/';
+        window.location.assign('/');
       }
     } catch (error: unknown) {
       console.error('Signup failed:', error);

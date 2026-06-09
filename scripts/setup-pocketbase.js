@@ -5,7 +5,34 @@ const path = require('path');
 const https = require('https');
 const { execSync } = require('child_process');
 
-const POCKETBASE_VERSION = '0.32.4'; // Latest stable version as of 2024
+// Fallback used only when POCKETBASE_VERSION isn't set in the environment or a
+// .env file. The authoritative value lives in .env.example — keep this in sync.
+const DEFAULT_POCKETBASE_VERSION = '0.39.2';
+
+// Resolve the PocketBase version from (in order): the process environment, the
+// repo-root .env, then .env.example, then the constant fallback above. This
+// avoids a dotenv dependency for a single value.
+function resolvePocketBaseVersion() {
+  if (process.env.POCKETBASE_VERSION) {
+    return process.env.POCKETBASE_VERSION;
+  }
+
+  for (const envFile of ['.env', '.env.example']) {
+    try {
+      const contents = fs.readFileSync(path.join(__dirname, '..', envFile), 'utf8');
+      const match = contents.match(/^\s*POCKETBASE_VERSION\s*=\s*(.+)\s*$/m);
+      if (match) {
+        return match[1].trim().replace(/^["']|["']$/g, '');
+      }
+    } catch {
+      // File missing or unreadable — fall through to the next source.
+    }
+  }
+
+  return DEFAULT_POCKETBASE_VERSION;
+}
+
+const POCKETBASE_VERSION = resolvePocketBaseVersion();
 const PLATFORM_MAP = {
   'darwin': 'darwin',
   'linux': 'linux',
