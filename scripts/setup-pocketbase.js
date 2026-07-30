@@ -7,7 +7,7 @@ const { execSync } = require('child_process');
 
 // Fallback used only when POCKETBASE_VERSION isn't set in the environment or a
 // .env file. The authoritative value lives in .env.example — keep this in sync.
-const DEFAULT_POCKETBASE_VERSION = '0.39.2';
+const DEFAULT_POCKETBASE_VERSION = '0.39.9';
 
 // Resolve the PocketBase version from (in order): the process environment, the
 // repo-root .env, then .env.example, then the constant fallback above. This

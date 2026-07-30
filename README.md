@@ -1,6 +1,6 @@
 # starter-ware
 
-A boilerplate for building apps with **[Next.js](https://nextjs.org/)** + **[PocketBase](https://pocketbase.io/)**, ready to run as a single container **or** as two pods in a **Kubernetes** cluster.
+A boilerplate for building apps with **[Next.js](https://nextjs.org/)** + **[PocketBase](https://pocketbase.io/)**, ready to run as a single all-in-one container **or** as two independently deployable images.
 
 PocketBase gives you an instant backend (SQLite, auth, file storage, realtime, admin UI); Next.js gives you the frontend. This template wires them together, ships container images, and automates versioned multi-arch releases to a registry.
 
@@ -10,7 +10,7 @@ PocketBase gives you an instant backend (SQLite, auth, file storage, realtime, a
 - **PocketBase 0.32** — API, auth, SQLite, file uploads, realtime, admin UI
 - **TypeScript** end to end; PocketBase types generated from collections
 - **Yarn 4** workspaces monorepo
-- **Docker** (single-container and split images) + **Kubernetes** manifests
+- **Docker** — single all-in-one container, or separate webapp / PocketBase images
 - **release-please** + **GitHub Actions** → versioned multi-arch images on GHCR
 
 ## Example app
@@ -35,8 +35,9 @@ Collections and rules live in [pocketbase/pb_migrations/](pocketbase/pb_migratio
                     └─────────────────────────────┘
 ```
 
-The browser talks to PocketBase directly (the JS SDK runs client-side). A reverse proxy keeps
-everything same-origin: **nginx** in the single-container image, an **Ingress** in Kubernetes.
+The browser talks to PocketBase directly (the JS SDK runs client-side). **nginx** inside the
+single-container image keeps everything same-origin, so no CORS configuration is needed. If you
+split the two images apart, put your own proxy or router in front of them to preserve that.
 
 ```
 starter-ware/
@@ -51,7 +52,6 @@ starter-ware/
 │   ├── pb_hooks/        # server-side JS hooks
 │   └── pb_migrations/   # schema migrations (auto-applied on boot)
 ├── docker/              # Dockerfile (monolith) + Dockerfile.webapp / .pocketbase
-├── k8s/                 # plain-YAML manifests + deploy-local.sh
 ├── docs/                # PocketBase usage guides (auth, realtime, uploads, …)
 └── .github/workflows/   # release.yml — release-please + image publishing
 ```
@@ -85,8 +85,34 @@ Then:
 | `yarn test` | Run webapp tests (Vitest) |
 | `yarn typecheck` | Type-check all workspaces |
 | `yarn lint` / `yarn format` | Lint-fix / format |
-| `yarn typegen` | Regenerate PocketBase types in the webapp |
+| `yarn precommit` | Lint + typecheck + format + test |
 | `yarn setup` | (Re)download the PocketBase binary |
+
+### Schema and migration scripts
+
+The zod collection definitions in `webapp/src/schema/` are the source of truth for fields and API
+rules; the files in `pocketbase/pb_migrations/` are what PocketBase actually applies on boot. These
+scripts (backed by [`pocketbase-zod-schema`](https://github.com/dastron/pocketbase-zod-schema), configured
+in [pocketbase-migrate.config.mjs](pocketbase-migrate.config.mjs)) keep the two honest:
+
+| Script | Description |
+|--------|-------------|
+| `yarn db:status` | Diff the zod schemas against the committed migrations — reports any drift |
+| `yarn db:verify` | Check which committed migrations the local database has actually applied |
+| `yarn db:generate` | Write a migration for the pending schema changes |
+| `yarn db:lint` | Check migrations for JS that Node accepts but PocketBase's goja runtime rejects |
+| `yarn typegen` | Generate `webapp/src/types/pocketbase-types.ts` from the schemas |
+
+Editing a zod schema does **not** change the database on its own — run `yarn db:status`, then
+`yarn db:generate` to produce the migration. `db:verify` reads `pocketbase/pb_data`, so it needs
+PocketBase to have run at least once (and Node ≥ 22.5 for `node:sqlite`).
+
+None of these run in `yarn precommit`; `db:status` is meant to be run deliberately when you touch a
+schema.
+
+> Note on exit codes: `db:status` **exits 0 even when it reports drift**, so it reads as a report,
+> not a gate. If you want to fail a build on drift, parse `pocketbase-migrate status --json` (it
+> emits `"status": "changes-pending"`). `db:verify` and `db:lint` do exit non-zero on a problem.
 
 ## Configuration
 
@@ -94,8 +120,8 @@ See [.env.example](.env.example). Key variables:
 
 | Variable | Used by | Purpose |
 |----------|---------|---------|
-| `NEXT_PUBLIC_POCKETBASE_URL` | webapp (build-time, client-side) | Base URL the browser uses for PocketBase. `http://localhost:8090` for dev; `/` behind the proxy/Ingress |
-| `POCKETBASE_URL`, `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD` | migration tooling | Admin auth for pushing migrations |
+| `NEXT_PUBLIC_POCKETBASE_URL` | webapp (build-time, client-side) | Base URL the browser uses for PocketBase. `http://localhost:8090` for dev; `/` when a proxy puts both on one origin |
+| `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD` | container entrypoint | When both are set, the entrypoint upserts this superuser on boot (idempotent); otherwise PocketBase prints a one-time setup URL |
 | `NODE_ENV` | both | `development` / `production` |
 
 > `NEXT_PUBLIC_*` is inlined into the JS bundle **at build time**, so the container images set it to `/` (same-origin via the proxy) — no CORS needed.
@@ -113,14 +139,17 @@ docker run -d -p 80:80 -v "$PWD/data:/data" starter-ware
 
 Details, env vars, and backups: [docker/README.md](docker/README.md).
 
-### 2. Kubernetes (two pods)
+### 2. Split images (two containers)
 
-PocketBase (single instance + PersistentVolume) and Next.js (stateless, scalable) as separate
-pods, with an Ingress replacing nginx. Full local walkthrough (kind/minikube):
-[k8s/README.md](k8s/README.md).
+`docker/Dockerfile.webapp` and `docker/Dockerfile.pocketbase` build the two halves separately, for
+when you want to scale the stateless frontend independently of the single stateful PocketBase
+instance. The webapp image builds with `NEXT_STANDALONE=1` (a self-contained `.next/standalone`
+server) and expects `NEXT_PUBLIC_POCKETBASE_URL=/`, so front them with a proxy or router that serves
+both on one origin — nginx is only bundled in the monolith image.
 
 ```bash
-./k8s/deploy-local.sh kind     # build → load → apply → create superuser
+docker build -f docker/Dockerfile.pocketbase -t starter-ware-pocketbase .
+docker build -f docker/Dockerfile.webapp --build-arg NEXT_PUBLIC_POCKETBASE_URL=/ -t starter-ware-webapp .
 ```
 
 ### 3. Published images
@@ -129,8 +158,8 @@ On each release, [`.github/workflows/release.yml`](.github/workflows/release.yml
 multi-arch (`amd64` + `arm64`) images to GHCR:
 
 - `ghcr.io/<owner>/<repo>/monolith` — all-in-one
-- `ghcr.io/<owner>/<repo>/webapp` — Next.js (for k8s)
-- `ghcr.io/<owner>/<repo>/pocketbase` — PocketBase (for k8s)
+- `ghcr.io/<owner>/<repo>/webapp` — Next.js only
+- `ghcr.io/<owner>/<repo>/pocketbase` — PocketBase only
 
 Versioning is driven by **release-please** from [Conventional Commits](https://www.conventionalcommits.org/)
 (`feat:`, `fix:`, `feat!:`). Merging the release PR cuts a tag, updates `CHANGELOG.md`, and pushes

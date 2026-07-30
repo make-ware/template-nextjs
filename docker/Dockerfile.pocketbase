@@ -1,5 +1,5 @@
-# Standalone PocketBase image for the Kubernetes deployment (see k8s/).
-# PocketBase is a single static Go binary, so a plain alpine base is enough —
+# Standalone PocketBase image, for running the webapp and PocketBase as separate
+# containers. PocketBase is a single static Go binary, so a plain alpine base is enough —
 # no Node runtime needed (unlike the monolithic docker/Dockerfile).
 # Build context = repo root:  docker build -f docker/Dockerfile.pocketbase -t starter-ware-pocketbase:local .
 
@@ -7,7 +7,7 @@
 FROM alpine:3.20 AS fetch
 RUN apk add --no-cache curl unzip
 # Fallback only — CI passes --build-arg POCKETBASE_VERSION from .env.example.
-ARG POCKETBASE_VERSION=0.39.2
+ARG POCKETBASE_VERSION=0.39.9
 ARG POCKETBASE_ARCH=amd64
 RUN curl -L "https://github.com/pocketbase/pocketbase/releases/download/v${POCKETBASE_VERSION}/pocketbase_${POCKETBASE_VERSION}_linux_${POCKETBASE_ARCH}.zip" \
       -o /tmp/pocketbase.zip && \
@@ -19,7 +19,8 @@ RUN curl -L "https://github.com/pocketbase/pocketbase/releases/download/v${POCKE
 FROM alpine:3.20 AS runner
 RUN apk add --no-cache ca-certificates
 
-# Non-root user (matches the uid/gid used in the k8s securityContext)
+# Non-root user — uid/gid 1001, so a mounted /app/pb/pb_data volume must be
+# writable by that id.
 RUN addgroup -S -g 1001 pb && adduser -S -u 1001 -G pb pb
 
 WORKDIR /app/pb

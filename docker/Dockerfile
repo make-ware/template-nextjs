@@ -20,7 +20,7 @@ RUN yarn install --immutable
 
 # Download PocketBase binary
 # Fallback only — CI passes --build-arg POCKETBASE_VERSION from .env.example.
-ARG POCKETBASE_VERSION=0.39.2
+ARG POCKETBASE_VERSION=0.39.9
 ARG POCKETBASE_ARCH=amd64
 RUN mkdir -p /app/pb && \
     curl -L "https://github.com/pocketbase/pocketbase/releases/download/v${POCKETBASE_VERSION}/pocketbase_${POCKETBASE_VERSION}_linux_${POCKETBASE_ARCH}.zip" \

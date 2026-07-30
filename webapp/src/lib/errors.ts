@@ -2,11 +2,7 @@
 // predictable shape the UI can display.
 
 export type AuthErrorType =
-  | 'validation'
-  | 'auth'
-  | 'network'
-  | 'server'
-  | 'unknown';
+  'validation' | 'auth' | 'network' | 'server' | 'unknown';
 
 export interface ParsedAuthError {
   type: AuthErrorType;

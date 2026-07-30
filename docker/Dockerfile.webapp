@@ -1,5 +1,5 @@
-# Standalone Next.js image for the Kubernetes deployment (see k8s/).
-# Unlike the monolithic docker/Dockerfile, this builds ONLY the webapp (no
+# Standalone Next.js image, for running the webapp and PocketBase as separate
+# containers. Unlike the monolithic docker/Dockerfile, this builds ONLY the webapp (no
 # PocketBase, no nginx, no supervisor) and uses Next.js standalone output for a
 # slim, self-contained server. There is no `shared` workspace — @template-ware/shared
 # is a tsconfig path alias into webapp/src, so no shared build step is needed.
@@ -37,8 +37,9 @@ ENV NEXT_STANDALONE=1
 
 # NEXT_PUBLIC_* values are inlined into the JS bundle at build time. The PocketBase
 # SDK appends "/api/..." to its base URL, so "/" makes browser requests resolve to
-# /api/... on the same origin (routed to PocketBase by the k8s Ingress). Override
-# at build time to point the bundle at an external PocketBase instance.
+# /api/... on the same origin — which assumes a proxy or router in front of both
+# containers forwards /api to PocketBase. Override at build time to point the
+# bundle at an external PocketBase instance instead.
 ARG NEXT_PUBLIC_POCKETBASE_URL=/
 ENV NEXT_PUBLIC_POCKETBASE_URL=${NEXT_PUBLIC_POCKETBASE_URL}
 

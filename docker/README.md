@@ -2,7 +2,7 @@
 
 Single-container deployment of the Next.js webapp + PocketBase + Nginx, supervised by `supervisord`. All runtime state lives under `/data` — bind-mount that one path and you're done.
 
-> For a multi-pod **Kubernetes** deployment (PocketBase and Next.js as separate pods, with an Ingress in place of nginx), see [k8s/README.md](../k8s/README.md).
+> To run the two halves as separate containers instead, see [Dockerfile.webapp](Dockerfile.webapp) and [Dockerfile.pocketbase](Dockerfile.pocketbase). Those images ship without nginx, so you supply the proxy or router that puts them on one origin.
 
 ## Architecture
 
@@ -28,7 +28,7 @@ Override it for a one-off build:
 
 ```bash
 docker build -f docker/Dockerfile \
-  --build-arg POCKETBASE_VERSION=0.39.2 \
+  --build-arg POCKETBASE_VERSION=0.39.9 \
   --build-arg POCKETBASE_ARCH=amd64 \
   -t template-ware .
 ```
@@ -124,8 +124,8 @@ images to **GitHub Container Registry** on every release:
 | Image | Dockerfile | Contents |
 |-------|------------|----------|
 | `ghcr.io/<owner>/<repo>/monolith` | [Dockerfile](Dockerfile) | All-in-one (Next.js + PocketBase + nginx) |
-| `ghcr.io/<owner>/<repo>/webapp` | [Dockerfile.webapp](Dockerfile.webapp) | Next.js standalone server (for k8s) |
-| `ghcr.io/<owner>/<repo>/pocketbase` | [Dockerfile.pocketbase](Dockerfile.pocketbase) | PocketBase + hooks + migrations (for k8s) |
+| `ghcr.io/<owner>/<repo>/webapp` | [Dockerfile.webapp](Dockerfile.webapp) | Next.js standalone server (split deployment) |
+| `ghcr.io/<owner>/<repo>/pocketbase` | [Dockerfile.pocketbase](Dockerfile.pocketbase) | PocketBase + hooks + migrations (split deployment) |
 
 **Versioning** is driven by [release-please](https://github.com/googleapis/release-please)
 using Conventional Commits (`feat:`, `fix:`, `feat!:`/`BREAKING CHANGE:`). It keeps a

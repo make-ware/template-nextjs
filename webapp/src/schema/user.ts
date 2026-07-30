@@ -4,7 +4,7 @@ import {
   EmailField,
   FileField,
   TextField,
-} from 'pocketbase-zod-schema/schema';
+} from 'pocketbase-zod-schema';
 import { z } from 'zod';
 
 // Define the Zod schema
@@ -29,6 +29,7 @@ export const UserSchema = z
 // Define the collection with permissions
 // Note: Indexes for auth collections (tokenKey, email) are automatically managed by PocketBase
 export const UserCollection = defineCollection({
+  type: 'auth',
   collectionName: 'Users',
   schema: UserSchema,
   permissions: {

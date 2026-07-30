@@ -4,7 +4,7 @@ import {
   BoolField,
   RelationField,
   baseSchema,
-} from 'pocketbase-zod-schema/schema';
+} from 'pocketbase-zod-schema';
 import { z } from 'zod';
 
 // Define the Zod schema
