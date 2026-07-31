@@ -4,10 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-Yarn 4 workspaces monorepo — run everything from the repo root. Workspaces: `@template-ware/webapp` (Next.js), `@template-ware/pb` (PocketBase).
+Yarn 4 workspaces monorepo — run everything from the repo root. Workspaces: `{{SCOPE}}/webapp` (Next.js), `{{SCOPE}}/pb` (PocketBase).
 
 ```bash
-yarn init:project     # one-shot: rename this template into a new project (see below)
 yarn install
 yarn setup            # download the PocketBase binary (gitignored; required before `yarn dev`)
 yarn dev              # Next.js :3000 + PocketBase :8090 concurrently
@@ -21,9 +20,9 @@ yarn precommit        # lint + typecheck + format + test — the actual gate
 Single test file / single test name:
 
 ```bash
-yarn workspace @template-ware/webapp test src/test/__tests__/login-form.test.tsx
-yarn workspace @template-ware/webapp test -t "shows validation error"
-yarn workspace @template-ware/webapp test:watch
+yarn workspace {{SCOPE}}/webapp test src/test/__tests__/login-form.test.tsx
+yarn workspace {{SCOPE}}/webapp test -t "shows validation error"
+yarn workspace {{SCOPE}}/webapp test:watch
 ```
 
 Schema/migration scripts (see "Schema definitions vs. migrations" below). Deliberately **not** part of `precommit` — run them when you touch a schema:
@@ -38,36 +37,7 @@ yarn typegen        # generate webapp/src/types/pocketbase-types.ts from the sch
 
 CI (`.github/workflows/release.yml`) only runs release-please and Docker image builds — it does **not** run lint, typecheck, or tests. `yarn precommit` is the only place those run.
 
-PocketBase alone: `yarn workspace @template-ware/pb dev` (`./pocketbase serve`). Admin UI at <http://localhost:8090/_/>; first visit creates the superuser.
-
-### Cloning this template into a new project
-
-`scripts/init-project.js` (`yarn init:project`) is the one-shot bootstrap for a fresh clone. It
-rewrites `@template-ware/*` → the new scope and `template-ware`/`starter-ware` → the new name across
-every text file, then re-sorts `yarn.lock` (renaming workspaces moves their entries out of yarn's
-sort order, which would otherwise make `yarn install --immutable` — used by the Docker builds —
-reject the lockfile). It also retitles the app, optionally strips the example Todos feature, seeds
-`.env`, and installs the project-facing `README.md` / `CLAUDE.md`.
-
-The files it installs live in `scripts/templates/`: `README.md`, `CLAUDE.md`, `home-page.tsx`, and
-`personalized-content.test.tsx`. They use `{{PROJECT_NAME}}` / `{{PROJECT_TITLE}}` /
-`{{PROJECT_DESCRIPTION}}` / `{{SCOPE}}` placeholders plus `<!-- IF_EXAMPLE -->` /
-`<!-- IF_NO_EXAMPLE -->` blocks, resolved by `render()`. The landing page and its test are installed
-as a pair — `personalized-content.test.tsx` asserts on the copy the landing page renders, so
-changing one without the other breaks `yarn test`.
-
-Two invariants to preserve when editing the script:
-
-- **It must never rename itself.** It holds the old names as constants, so `renameEverywhere` skips
-  `__filename` and `scripts/templates/`.
-- **Fragments it edits must stay in sync with the source.** `editFile`/`dropLines` record a note
-  instead of failing when an expected fragment is missing, so if you change the metadata block in
-  `app/layout.tsx`, the nav brand span, or the Todos entries in the barrels/`TypedPocketBase`
-  interfaces, update the matching strings in `EXAMPLE_PATHS`, `retitleApp`, and `removeExample`.
-
-Verify changes end to end by running the script into a scratch copy of the repo and then running
-`yarn install --immutable` and `yarn precommit` there — both branches (`--example` and
-`--no-example`) should come out clean.
+PocketBase alone: `yarn workspace {{SCOPE}}/pb dev` (`./pocketbase serve`). Admin UI at <http://localhost:8090/_/>; first visit creates the superuser.
 
 ## Architecture
 
@@ -83,9 +53,9 @@ Data flows in layers, top to bottom:
 | Contexts | `webapp/src/contexts/*.tsx` | React state, optimistic updates, subscription lifecycle |
 | Components | `webapp/src/components/` | shadcn/ui primitives in `ui/`, feature components alongside |
 
-### `@template-ware/shared` is an alias, not a package
+### `{{SCOPE}}/shared` is an alias, not a package
 
-It resolves into `webapp/src` and is declared in **two places that must stay in sync**: `paths` in `webapp/tsconfig.json` and `resolve.alias` in `webapp/vitest.config.mjs`. Subpaths: bare `@template-ware/shared` → `src/shared/index.ts` (schemas + `lib/{errors,retry,loading-manager}` only), `/schema` → `src/schema/index.ts`, `/mutators` → `src/mutators/index.ts`. Mutators are deliberately kept out of the bare barrel.
+It resolves into `webapp/src` and is declared in **two places that must stay in sync**: `paths` in `webapp/tsconfig.json` and `resolve.alias` in `webapp/vitest.config.mjs`. Subpaths: bare `{{SCOPE}}/shared` → `src/shared/index.ts` (schemas + `lib/{errors,retry,loading-manager}` only), `/schema` → `src/schema/index.ts`, `/mutators` → `src/mutators/index.ts`. Mutators are deliberately kept out of the bare barrel.
 
 ### Schema definitions vs. migrations
 
@@ -93,29 +63,37 @@ It resolves into `webapp/src` and is declared in **two places that must stay in 
 
 `pocketbase-migrate.config.mjs` (repo root) points the CLI at `webapp/src/schema` and `pocketbase/pb_migrations`; `schema.exclude` is intentionally left at its default so the `index.ts` barrel stays out of schema discovery. `verify: true` round-trips `up()`/`down()` before writing, so a migration that can't roll back is refused.
 
+<!-- IF_EXAMPLE -->
 `yarn db:status` currently reports real drift: `Todos.title` and `Todos.description` carry min/max constraints in the zod schema that the committed migration never applied, so the database does not enforce them. Closing that gap means generating a migration — a deliberate schema change, not a cleanup.
 
+<!-- END_IF_EXAMPLE -->
 `db:status` **exits 0 even when drift exists**, so never treat it as a gate; parse `pocketbase-migrate status --json` (`"status": "changes-pending"`) for that. `db:verify` and `db:lint` do exit non-zero.
 
 `yarn typegen` writes `webapp/src/types/pocketbase-types.ts` (kept out of the schema directory so generated output is never parsed as a collection definition). Nothing imports it yet — the generated `TypedPocketBase` types only the capitalized collection names, so it is not a drop-in replacement for the hand-written ones described below.
 
 ### Authorization lives in PocketBase rules
 
-Per-user scoping is enforced by collection rules (e.g. Todos: `@request.auth.id != "" && user = @request.auth.id`), so mutators intentionally set no user filter. The flip side: `TodoMutator.create` must inject `user: pb.authStore.record.id` itself, because `createRule` requires the field to match the caller. New per-user collections should follow the same pattern.
+Per-user scoping is enforced by collection rules (e.g. `@request.auth.id != "" && user = @request.auth.id`), so mutators intentionally set no user filter. The flip side: a per-user collection's `create` must inject `user: pb.authStore.record.id` itself, because `createRule` requires the field to match the caller. New per-user collections should follow the same pattern.
 
 ### Auth state
 
-`pb.authStore` is the source of truth; `AuthProvider` (mounted globally in `app/layout.tsx`) mirrors it via `authStore.onChange` and revalidates with `authRefresh()` on mount, every 5 minutes, on window focus, and on `online`. Read auth through `useAuth()`, never by re-reading `authStore` in components. `TodoProvider`, by contrast, is mounted per-page in `app/todos/page.tsx`.
+`pb.authStore` is the source of truth; `AuthProvider` (mounted globally in `app/layout.tsx`) mirrors it via `authStore.onChange` and revalidates with `authRefresh()` on mount, every 5 minutes, on window focus, and on `online`. Read auth through `useAuth()`, never by re-reading `authStore` in components.
 
-`TodoContext` applies optimistic updates with rollback on failure *and* holds a realtime `'*'` subscription, so writes can land twice — dedupe by id when adding to that path.
+<!-- IF_EXAMPLE -->
+`TodoProvider`, by contrast, is mounted per-page in `app/todos/page.tsx`. `TodoContext` applies optimistic updates with rollback on failure *and* holds a realtime `'*'` subscription, so writes can land twice — dedupe by id when adding to that path. Feature providers you add should follow the same shape.
 
+<!-- END_IF_EXAMPLE -->
+<!-- IF_NO_EXAMPLE -->
+Feature providers, by contrast, are mounted per-page rather than globally. When a provider combines optimistic updates with a realtime `'*'` subscription, writes can land twice — dedupe by id when adding to that path.
+
+<!-- END_IF_NO_EXAMPLE -->
 ### Cross-cutting helpers
 
 `parseAuthError` (`lib/errors.ts`) normalizes PocketBase `ClientResponseError` into `{type, message, fieldErrors}` for display; `withRetry` (`lib/retry.ts`) retries only network/5xx, never 4xx; `globalLoadingManager` (`lib/loading-manager.ts`) tracks named loading keys.
 
 ### Collection-name casing
 
-Mutators call `pb.collection('Todos')` / `'Users'` while auth and realtime code call `'todos'` / `'users'`. Both casings are typed in `webapp/src/lib/types.ts`; `webapp/src/types/index.ts` declares a second, stricter `TypedPocketBase` with only the capitalized names. Match whatever the surrounding file does.
+Mutators call `pb.collection('Users')` (capitalized) while auth and realtime code call `'users'`. Both casings are typed in `webapp/src/lib/types.ts`; `webapp/src/types/index.ts` declares a second, stricter `TypedPocketBase` with only the capitalized names. Match whatever the surrounding file does, and add new collections to both interfaces.
 
 ## Testing
 
@@ -127,7 +105,7 @@ No live PocketBase is needed — use `src/test/__tests__/fixtures/pocketbase.ts`
 
 - `POCKETBASE_VERSION` in `.env.example` is the single source of truth for the binary version — `scripts/setup-pocketbase.js`, the Dockerfiles, and CI all read it from there. Bump it in that one file.
 - `NEXT_PUBLIC_POCKETBASE_URL` is inlined at **build** time: `http://localhost:8090` for dev, `/` for the container images (same-origin behind nginx, so no CORS).
-- `docker/Dockerfile` is the all-in-one image (nginx + Next.js + PocketBase under supervisord, all state in `/data`). `docker/Dockerfile.webapp` + `docker/Dockerfile.pocketbase` build the two halves separately; those images have no nginx, so a proxy has to put them on one origin. `NEXT_STANDALONE=1` (set only by `Dockerfile.webapp`) is the one thing that switches `next.config.ts` to `output: 'standalone'`. There are no Kubernetes manifests in this repo — they were removed in `be4d594`, and the docs no longer reference them.
+- `docker/Dockerfile` is the all-in-one image (nginx + Next.js + PocketBase under supervisord, all state in `/data`). `docker/Dockerfile.webapp` + `docker/Dockerfile.pocketbase` build the two halves separately; those images have no nginx, so a proxy has to put them on one origin. `NEXT_STANDALONE=1` (set only by `Dockerfile.webapp`) is the one thing that switches `next.config.ts` to `output: 'standalone'`.
 - `POCKETBASE_ADMIN_EMAIL` / `POCKETBASE_ADMIN_PASSWORD` are read only by `docker/pb-entrypoint.sh`, which upserts that superuser on boot. The migration scripts need no credentials — they work off files on disk.
 - Commit messages drive releases via release-please — use Conventional Commits (`feat:`, `fix:`, `feat!:`).
 - Styling is Tailwind v4 CSS-first (`src/app/globals.css`, `@tailwindcss/postcss`); there is no `tailwind.config`. UI components come from shadcn/ui (`new-york`, lucide icons).

@@ -8,6 +8,7 @@
     "pocketbase"
   ],
   "scripts": {
+    "init:project": "node scripts/init-project.js",
     "setup": "node scripts/setup-pocketbase.js",
     "dev": "concurrently \"yarn workspace @template-ware/webapp dev\" \"yarn workspace @template-ware/pb dev\"",
     "build": "yarn workspaces foreach -A run build",
