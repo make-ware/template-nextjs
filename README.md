@@ -4,6 +4,37 @@ A boilerplate for building apps with **[Next.js](https://nextjs.org/)** + **[Poc
 
 PocketBase gives you an instant backend (SQLite, auth, file storage, realtime, admin UI); Next.js gives you the frontend. This template wires them together, ships container images, and automates versioned multi-arch releases to a registry.
 
+## Starting a new project from this template
+
+Clone it (or use GitHub's **Use this template**), then run the initializer once:
+
+```bash
+corepack enable
+yarn init:project        # interactive — asks for name, scope, title, description
+```
+
+It renames the workspace scope (`@template-ware/*` → your own) across every config file, import,
+and `yarn.lock` entry; retitles the app; optionally strips the example Todos feature; writes `.env`;
+and regenerates `README.md` / `CLAUDE.md` so they describe *your* project instead of the template.
+
+```bash
+yarn init:project --dry-run     # preview every file it would touch
+yarn init:project --name acme-app --scope @acme --no-example --yes
+```
+
+| Flag | Effect |
+|------|--------|
+| `--name`, `--scope`, `--title`, `--description` | Skip the matching prompt |
+| `--example` / `--no-example` | Keep or remove the example Todos feature |
+| `--keep-docs` | Leave `README.md` / `CLAUDE.md` alone |
+| `--reset-git` | Wipe git history and make a fresh initial commit |
+| `--cleanup` | Delete the init tooling once it has run |
+| `--dry-run`, `--yes`, `--force` | Preview / skip prompts / override safety checks |
+
+It refuses to run on a dirty working tree or an already-initialized repo unless you pass `--force`.
+Afterwards, `yarn install` relinks the renamed workspaces — then continue with **Quick start** below
+(you can skip `cp .env.example .env`, the initializer already did it).
+
 ## Stack
 
 - **Next.js 16** (App Router) + **React 19**, **Tailwind CSS v4**, **Radix UI**, **react-hook-form** + **zod**
@@ -65,8 +96,7 @@ Requires **Node 20+**, **Yarn 4** (via Corepack), and a POSIX shell.
 ```bash
 corepack enable          # enables the pinned Yarn 4
 yarn install             # install dependencies
-yarn setup               # download the PocketBase binary for your platform
-cp .env.example .env     # configure (defaults work for local dev)
+yarn setup               # download the PocketBase binary; writes .env if missing
 
 yarn dev                 # start Next.js (:3000) and PocketBase (:8090) together
 ```
@@ -86,7 +116,8 @@ Then:
 | `yarn typecheck` | Type-check all workspaces |
 | `yarn lint` / `yarn format` | Lint-fix / format |
 | `yarn precommit` | Lint + typecheck + format + test |
-| `yarn setup` | (Re)download the PocketBase binary |
+| `yarn setup` | (Re)download the PocketBase binary; create `.env` if missing |
+| `yarn init:project` | Rename/retitle this template into a new project (run once) |
 
 ### Schema and migration scripts
 

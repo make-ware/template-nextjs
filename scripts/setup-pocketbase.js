@@ -163,10 +163,25 @@ async function setupPocketBase() {
 }
 
 // Create initial PocketBase configuration
+// Seed .env from .env.example on a fresh clone so `yarn dev` works without a
+// manual copy step. Never overwrites an existing .env.
+function createEnvFile() {
+  const root = path.join(__dirname, '..');
+  const envPath = path.join(root, '.env');
+  const examplePath = path.join(root, '.env.example');
+
+  if (fs.existsSync(envPath) || !fs.existsSync(examplePath)) {
+    return;
+  }
+
+  fs.copyFileSync(examplePath, envPath);
+  console.log('📝 Created .env from .env.example');
+}
+
 function createInitialConfig() {
   const pbDir = path.join(__dirname, '..', 'pocketbase');
   const configPath = path.join(pbDir, 'pb_hooks');
-  
+
   if (!fs.existsSync(configPath)) {
     fs.mkdirSync(configPath, { recursive: true });
     
@@ -197,6 +212,7 @@ onRecordAfterDeleteRequest((e) => {
 if (require.main === module) {
   setupPocketBase().then(() => {
     createInitialConfig();
+    createEnvFile();
   });
 }
 
