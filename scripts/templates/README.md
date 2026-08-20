@@ -128,10 +128,33 @@ See [.env.example](.env.example). Key variables:
 |----------|---------|---------|
 | `POCKETBASE_VERSION` | setup script, Dockerfiles, CI | Single source of truth for the PocketBase binary version |
 | `NEXT_PUBLIC_POCKETBASE_URL` | webapp (build-time, client-side) | Base URL the browser uses for PocketBase. `http://localhost:8090` for dev; `/` when a proxy puts both on one origin |
+| `PUBLIC_POCKETBASE_URL` | webapp (**runtime**, client-side) | Overrides the above without a rebuild. Leave unset for same-origin deployments; set it when PocketBase is on its own hostname |
 | `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD` | container entrypoint | When both are set, the entrypoint upserts this superuser on boot |
 
 > `NEXT_PUBLIC_*` is inlined into the JS bundle **at build time**, so the container images set it to
 > `/` (same-origin via the bundled proxy) — no CORS needed.
+
+### Runtime config: the `PUBLIC_*` pattern
+
+`next build` freezes every `NEXT_PUBLIC_*` variable into the browser bundle, so setting one
+in a container's env changes nothing for the client. Values an operator must be able to
+retune without a rebuild use a different road:
+
+1. Name the variable **without** the `NEXT_PUBLIC_` prefix, so Next never inlines it.
+2. Read it from `process.env` **inside the request path** — a module-scope read is
+   evaluated during `next build` and bakes the value straight back in.
+3. The root layout emits it as an inline `<script>` setting
+   `globalThis.__APP_RUNTIME_CONFIG__`; the browser reads it back from there.
+
+The contract lives in [`webapp/src/lib/runtime-config.ts`](webapp/src/lib/runtime-config.ts),
+with `PUBLIC_POCKETBASE_URL` as the worked example — copy that shape for your own
+runtime-tunable values instead of adding another `NEXT_PUBLIC_*`.
+
+Two consequences: the root layout is `force-dynamic` (which is what makes the per-request
+read real, at the cost of static prerendering app-wide), and **nothing may touch the `pb`
+singleton at module scope** — `AuthProvider` reconciles `pb.baseURL` on mount, above every
+consumer, which only works while every importer uses `pb` inside a render, effect, or
+callback.
 
 ## Deployment
 

@@ -152,10 +152,41 @@ See [.env.example](.env.example). Key variables:
 | Variable | Used by | Purpose |
 |----------|---------|---------|
 | `NEXT_PUBLIC_POCKETBASE_URL` | webapp (build-time, client-side) | Base URL the browser uses for PocketBase. `http://localhost:8090` for dev; `/` when a proxy puts both on one origin |
+| `PUBLIC_POCKETBASE_URL` | webapp (**runtime**, client-side) | Overrides the above without a rebuild. Leave unset for same-origin deployments; set it when PocketBase is on its own hostname |
 | `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD` | container entrypoint | When both are set, the entrypoint upserts this superuser on boot (idempotent); otherwise PocketBase prints a one-time setup URL |
 | `NODE_ENV` | both | `development` / `production` |
 
 > `NEXT_PUBLIC_*` is inlined into the JS bundle **at build time**, so the container images set it to `/` (same-origin via the proxy) — no CORS needed.
+
+### Runtime config: the `PUBLIC_*` pattern
+
+`next build` inlines every `NEXT_PUBLIC_*` variable into the browser bundle, so those
+variables are **frozen at build time** — setting one in a container's env changes nothing
+for the client. Any value an operator must be able to retune without rebuilding the image
+therefore needs a different road, and this template ships one:
+
+1. Name the variable **without** the `NEXT_PUBLIC_` prefix, so Next never inlines it.
+2. Read it from `process.env` **inside the request path** — a module-scope read is
+   evaluated during `next build` and bakes the value straight back in.
+3. The root layout emits it as an inline `<script>` setting
+   `globalThis.__APP_RUNTIME_CONFIG__`; the browser reads it back from there.
+
+The contract lives in [`webapp/src/lib/runtime-config.ts`](webapp/src/lib/runtime-config.ts)
+and `PUBLIC_POCKETBASE_URL` is its one worked example — copy the shape for your own
+runtime-tunable values rather than reaching for another `NEXT_PUBLIC_*`.
+
+Two consequences worth knowing before you build on it:
+
+- The root layout is `export const dynamic = 'force-dynamic'`, which is what makes the
+  per-request read real. It costs the app's static prerendering — every route is
+  server-rendered on demand. That is cheap here because every page is already
+  `'use client'`, but if you add a genuinely static, cacheable page, move the injection
+  into a narrower layout instead of paying for it app-wide.
+- **Nothing may touch the `pb` singleton at module scope.** React hoists Next's async
+  bundle chunks above anything the layout emits, so a chunk can construct the singleton
+  before the inline script runs; `AuthProvider` reconciles `pb.baseURL` on mount, above
+  every consumer, which is only sufficient while no request has already gone out. Use
+  `pb` inside renders, effects and callbacks — never at import time.
 
 ## Deployment
 
@@ -176,7 +207,9 @@ Details, env vars, and backups: [docker/README.md](docker/README.md).
 when you want to scale the stateless frontend independently of the single stateful PocketBase
 instance. The webapp image builds with `NEXT_STANDALONE=1` (a self-contained `.next/standalone`
 server) and expects `NEXT_PUBLIC_POCKETBASE_URL=/`, so front them with a proxy or router that serves
-both on one origin — nginx is only bundled in the monolith image.
+both on one origin — nginx is only bundled in the monolith image. To run the webapp image against a
+PocketBase on a separate hostname instead, set `PUBLIC_POCKETBASE_URL` at runtime rather than
+rebuilding with a different `--build-arg`.
 
 ```bash
 docker build -f docker/Dockerfile.pocketbase -t starter-ware-pocketbase .
