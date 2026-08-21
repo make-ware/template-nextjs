@@ -1,13 +1,13 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { RUNTIME_CONFIG_KEY } from '@/lib/runtime-config';
 
 type Host = typeof globalThis & { [RUNTIME_CONFIG_KEY]?: unknown };
 
 /**
- * The PocketBase client is a module-scoped singleton constructed at import
- * time, so the runtime config has to be on `globalThis` *before* the dynamic
- * `import()` — hence `vi.resetModules()` between cases. Skipping these would
- * leave the actual fix untested; this module is the fix.
+ * The PocketBase client is a module-scoped singleton, so each case needs a
+ * fresh one — hence `vi.resetModules()` before the dynamic `import()`.
+ * Whether the runtime config is set before or after that import is exactly
+ * what the lazy-resolution cases below exercise.
  */
 async function loadClient() {
   vi.resetModules();
@@ -16,6 +16,12 @@ async function loadClient() {
 
 beforeEach(() => {
   delete (globalThis as Host)[RUNTIME_CONFIG_KEY];
+});
+
+// Unstub here rather than at the end of a test body: an assertion that throws
+// would otherwise leave NEXT_PUBLIC_POCKETBASE_URL stubbed for every later test.
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe('pocketbase resolveUrl', () => {
@@ -69,33 +75,44 @@ describe('pocketbase resolveUrl', () => {
     const { resolveUrl } = await loadClient();
 
     expect(resolveUrl()).toBe('http://localhost:8090');
-
-    vi.unstubAllEnvs();
   });
 });
 
-describe('syncBaseUrl', () => {
-  it('re-points a singleton constructed before the config landed', async () => {
+describe('lazy base URL resolution', () => {
+  it('retargets a singleton constructed before the config landed', async () => {
     // The real race: a bundle chunk imports the module (and constructs `pb`)
-    // before the layout's inline script has run.
-    const { default: pb, syncBaseUrl } = await loadClient();
+    // before the layout's inline script has run. Nothing reconciles the
+    // singleton afterwards, so `baseURL` has to resolve on read.
+    const { default: pb } = await loadClient();
     expect(pb.baseURL).toBe(process.env.NEXT_PUBLIC_POCKETBASE_URL);
 
     (globalThis as Host)[RUNTIME_CONFIG_KEY] = {
       pocketbaseUrl: 'https://pb.example.com',
     };
-    syncBaseUrl();
 
     expect(pb.baseURL).toBe('https://pb.example.com');
+    expect(pb.buildURL('/api/health')).toBe(
+      'https://pb.example.com/api/health'
+    );
   });
 
-  it('is a no-op when nothing is configured', async () => {
-    const { default: pb, syncBaseUrl } = await loadClient();
-    const before = pb.baseURL;
+  it('keeps returning the build-time value when nothing is configured', async () => {
+    const { default: pb } = await loadClient();
 
-    syncBaseUrl();
-    syncBaseUrl();
+    expect(pb.baseURL).toBe(process.env.NEXT_PUBLIC_POCKETBASE_URL);
+    expect(pb.baseURL).toBe(process.env.NEXT_PUBLIC_POCKETBASE_URL);
+  });
 
-    expect(pb.baseURL).toBe(before);
+  it('lets an explicit assignment win over the runtime config', async () => {
+    // `baseURL` is a writable field in the SDK's public contract, and the
+    // deprecated `baseUrl` alias delegates to it — neither may silently no-op.
+    const { default: pb } = await loadClient();
+
+    pb.baseURL = 'https://manual.example.com';
+    (globalThis as Host)[RUNTIME_CONFIG_KEY] = {
+      pocketbaseUrl: 'https://pb.example.com',
+    };
+
+    expect(pb.baseURL).toBe('https://manual.example.com');
   });
 });

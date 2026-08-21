@@ -44,12 +44,13 @@ export default function RootLayout({
       {/* Inline classic script setting the runtime config during HTML parse.
           React hoists Next's own bundle <script async> tags ABOVE anything the
           layout emits, so this is NOT the first child of <head> and cannot be
-          made so from the App Router — an async chunk could execute first and
-          construct the PocketBase singleton with the stale URL. `AuthProvider`
-          closes that window by reconciling `pb.baseURL` before any consumer
-          renders; see `syncBaseUrl` in lib/pocketbase.ts. Emitted only when
-          configured, so deployments that set nothing ship byte-identical HTML
-          to before. */}
+          made so from the App Router — an async chunk can execute first and
+          construct the PocketBase singleton before this runs. That is fine:
+          the singleton resolves its base URL on every read rather than at
+          construction, so the first request made after this script lands
+          already uses the right origin. See lib/pocketbase.ts. Emitted only
+          when configured, so deployments that set nothing ship byte-identical
+          HTML to before. */}
       {pocketbaseUrl && (
         <head>
           <script

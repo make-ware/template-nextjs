@@ -243,19 +243,30 @@ export function resolveUrl(): string {
   );
 }
 
-const pb = createPocketBaseClient(resolveUrl(), { ... }) as TypedPocketBase;
+const pb = createPocketBaseClient(resolveUrl, { ... });
+
+// Inside createPocketBaseClient: resolve on read, not at construction.
+Object.defineProperty(pb, 'baseURL', {
+  get: () => baseUrlOverride ?? resolveBaseUrl(),
+  set: (value) => { baseUrlOverride = value; },
+  enumerable: true,
+  configurable: true,
+});
 
 export default pb;
 ```
 
 Always use this singleton instance - never create new PocketBase instances.
 
-**Never touch `pb` at module scope.** Use it inside a render, effect, or callback only.
-The URL above is fixed when the module loads, but React hoists Next's async bundle chunks
-above the root layout's inline runtime-config script, so a chunk can construct the
-singleton before the injected URL exists. `AuthProvider` calls `syncBaseUrl()` during its
-render — above every consumer — to reconcile `pb.baseURL`, and that is only sufficient
-while no request has already gone out on the stale URL.
+**The base URL resolves on every read.** React hoists Next's async bundle chunks above the
+root layout's inline runtime-config script, so a chunk can construct the singleton before
+the injected URL exists. Rather than make every caller remember a reconciliation step,
+`baseURL` is a getter over `resolveUrl()` — and the SDK consults it inside `buildURL` on
+every request, so the first request made after the script lands already goes to the right
+origin. An explicit `pb.baseURL = ...` assignment still wins from then on.
+
+The one case this cannot rescue is a request _fired_ at module scope, before the inline
+script has executed. Keep data access inside renders, effects, and callbacks.
 
 ## Development Best Practices
 
@@ -340,6 +351,10 @@ unprefixed runtime channel instead: `PUBLIC_POCKETBASE_URL` is read from `proces
 the root layout per request and injected into the page. See
 `src/lib/runtime-config.ts` for the contract, and the root
 [README](../README.md#runtime-config-the-public_-pattern) for the pattern.
+
+Note that it belongs in `webapp/.env.local` (or the container env), **not** the repo-root
+`.env`: `next dev` runs with its working directory here, so Next loads `webapp/.env*` and
+never the repo-root file.
 
 ## Available Scripts
 

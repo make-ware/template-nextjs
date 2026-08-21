@@ -152,7 +152,7 @@ See [.env.example](.env.example). Key variables:
 | Variable | Used by | Purpose |
 |----------|---------|---------|
 | `NEXT_PUBLIC_POCKETBASE_URL` | webapp (build-time, client-side) | Base URL the browser uses for PocketBase. `http://localhost:8090` for dev; `/` when a proxy puts both on one origin |
-| `PUBLIC_POCKETBASE_URL` | webapp (**runtime**, client-side) | Overrides the above without a rebuild. Leave unset for same-origin deployments; set it when PocketBase is on its own hostname |
+| `PUBLIC_POCKETBASE_URL` | webapp (**runtime**, client-side) | Overrides the above without a rebuild. Read from the Next server's process env, so set it on the container/host — a repo-root `.env` is not read by `next dev` (use `webapp/.env.local` locally). Leave unset for same-origin deployments |
 | `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD` | container entrypoint | When both are set, the entrypoint upserts this superuser on boot (idempotent); otherwise PocketBase prints a one-time setup URL |
 | `NODE_ENV` | both | `development` / `production` |
 
@@ -178,15 +178,21 @@ runtime-tunable values rather than reaching for another `NEXT_PUBLIC_*`.
 Two consequences worth knowing before you build on it:
 
 - The root layout is `export const dynamic = 'force-dynamic'`, which is what makes the
-  per-request read real. It costs the app's static prerendering — every route is
-  server-rendered on demand. That is cheap here because every page is already
-  `'use client'`, but if you add a genuinely static, cacheable page, move the injection
-  into a narrower layout instead of paying for it app-wide.
-- **Nothing may touch the `pb` singleton at module scope.** React hoists Next's async
-  bundle chunks above anything the layout emits, so a chunk can construct the singleton
-  before the inline script runs; `AuthProvider` reconciles `pb.baseURL` on mount, above
-  every consumer, which is only sufficient while no request has already gone out. Use
-  `pb` inside renders, effects and callbacks — never at import time.
+  per-request read real. It costs the app's static prerendering — all six routes go from
+  prerendered (`○`) to server-rendered on demand (`ƒ`), and that is paid even by
+  deployments that never set `PUBLIC_POCKETBASE_URL`. It is cheap here because every page
+  is already `'use client'`, but if you add a genuinely static, cacheable page, move the
+  injection into a narrower layout instead of paying for it app-wide.
+- **The `pb` singleton resolves its base URL lazily**, so no import-order rule is needed.
+  React hoists Next's async bundle chunks above anything the layout emits, so a chunk can
+  construct the singleton before the inline script runs; `lib/pocketbase.ts` therefore
+  defines `baseURL` as a getter over `resolveUrl()` rather than freezing it at
+  construction. The SDK consults it inside `buildURL` on every request, so the first
+  request issued after the script lands already uses the right origin.
+
+  The one thing this cannot rescue is a request *fired* at module scope, before the
+  inline script has executed. Keep data access in renders, effects and callbacks — which
+  is what [`docs/PB_SSR.md`](docs/PB_SSR.md) already asks for.
 
 ## Deployment
 

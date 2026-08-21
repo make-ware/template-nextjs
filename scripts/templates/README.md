@@ -128,7 +128,7 @@ See [.env.example](.env.example). Key variables:
 |----------|---------|---------|
 | `POCKETBASE_VERSION` | setup script, Dockerfiles, CI | Single source of truth for the PocketBase binary version |
 | `NEXT_PUBLIC_POCKETBASE_URL` | webapp (build-time, client-side) | Base URL the browser uses for PocketBase. `http://localhost:8090` for dev; `/` when a proxy puts both on one origin |
-| `PUBLIC_POCKETBASE_URL` | webapp (**runtime**, client-side) | Overrides the above without a rebuild. Leave unset for same-origin deployments; set it when PocketBase is on its own hostname |
+| `PUBLIC_POCKETBASE_URL` | webapp (**runtime**, client-side) | Overrides the above without a rebuild. Read from the Next server's process env, so set it on the container/host — a repo-root `.env` is not read by `next dev` (use `webapp/.env.local` locally) |
 | `POCKETBASE_ADMIN_EMAIL`, `POCKETBASE_ADMIN_PASSWORD` | container entrypoint | When both are set, the entrypoint upserts this superuser on boot |
 
 > `NEXT_PUBLIC_*` is inlined into the JS bundle **at build time**, so the container images set it to
@@ -151,10 +151,11 @@ with `PUBLIC_POCKETBASE_URL` as the worked example — copy that shape for your 
 runtime-tunable values instead of adding another `NEXT_PUBLIC_*`.
 
 Two consequences: the root layout is `force-dynamic` (which is what makes the per-request
-read real, at the cost of static prerendering app-wide), and **nothing may touch the `pb`
-singleton at module scope** — `AuthProvider` reconciles `pb.baseURL` on mount, above every
-consumer, which only works while every importer uses `pb` inside a render, effect, or
-callback.
+read real, at the cost of static prerendering app-wide, paid whether or not the variable is
+set), and the `pb` singleton resolves its base URL **lazily** — `lib/pocketbase.ts` defines
+`baseURL` as a getter over `resolveUrl()`, so a singleton constructed before the inline
+script runs still issues its first request against the right origin. Only a request *fired*
+at module scope can outrun it, so keep data access in renders, effects and callbacks.
 
 ## Deployment
 

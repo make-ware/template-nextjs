@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 import type { User, UserInput } from '@template-ware/shared';
 import { parseAuthError, globalLoadingManager } from '@template-ware/shared';
-import pb, { syncBaseUrl } from '@/lib/pocketbase';
+import pb from '@/lib/pocketbase';
 import { createAuthService } from '@/services';
 
 interface AuthContextType {
@@ -38,16 +38,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
 
   // Create auth service - memoized to prevent recreation on every render
-  const authService = useMemo(() => {
-    // This provider is mounted in the root layout, above every PocketBase
-    // consumer in the app, and this runs during its render — before any
-    // descendant renders or fires an effect. That makes it the one place the
-    // singleton can be reconciled against the server-injected runtime config
-    // without racing Next's async bundle chunks. No-op when
-    // `PUBLIC_POCKETBASE_URL` is unset. See `syncBaseUrl` in lib/pocketbase.ts.
-    syncBaseUrl();
-    return createAuthService(pb);
-  }, []);
+  const authService = useMemo(() => createAuthService(pb), []);
 
   // Initialize auth state from PocketBase AuthStore
   useEffect(() => {

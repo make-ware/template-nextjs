@@ -126,6 +126,11 @@ See [.env.example](../.env.example) for the full list.
 > is a deployment change as well as a config one: PocketBase must allow the webapp's
 > origin via CORS, and the browser needs direct access to `/api/realtime` on that host
 > for the realtime SSE stream.
+>
+> **If you add a Content-Security-Policy.** The value travels in an inline `<script>`,
+> so a policy without `unsafe-inline` for `script-src` blocks it and the browser falls
+> back to the build-time URL. `nginx.conf` ships no CSP today; if you add one, give the
+> tag a nonce or hash.
 
 ```bash
 # Retarget a running image at a PocketBase on its own hostname — no rebuild

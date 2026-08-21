@@ -23,9 +23,6 @@ vi.mock('@/hooks/use-mobile', () => ({
 
 // Mock PocketBase client
 vi.mock('@/lib/pocketbase', () => ({
-  // AuthProvider reconciles the PocketBase singleton against the
-  // server-injected runtime config on mount; see lib/runtime-config.ts.
-  syncBaseUrl: vi.fn(),
   default: {
     authStore: {
       isValid: false,

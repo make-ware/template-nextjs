@@ -44,9 +44,6 @@ vi.mock('@/lib/pocketbase', () => {
   };
 
   return {
-    // AuthProvider reconciles the PocketBase singleton against the
-    // server-injected runtime config on mount; see lib/runtime-config.ts.
-    syncBaseUrl: vi.fn(),
     default: mockPb,
     authHelpers: mockAuthHelpers,
   };

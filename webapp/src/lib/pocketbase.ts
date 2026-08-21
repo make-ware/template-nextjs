@@ -38,10 +38,33 @@ export function resolveUrl(): string {
  * Create a configured PocketBase client with proper settings
  */
 function createPocketBaseClient(
-  url: string = 'http://localhost:8090',
+  resolveBaseUrl: () => string,
   options: PocketBaseClientOptions = {}
 ): TypedPocketBase {
-  const pb = new PocketBase(url) as TypedPocketBase;
+  const pb = new PocketBase(resolveBaseUrl()) as TypedPocketBase;
+
+  // Resolve the base URL on every read rather than freezing it here.
+  //
+  // Next emits its bundle chunks as `<script async>` and React hoists them
+  // ABOVE anything the root layout emits, so this module can be evaluated —
+  // and this singleton constructed — before the layout's inline
+  // runtime-config script has run. Ordering therefore cannot be the guarantee.
+  // The SDK reads `baseURL` inside `buildURL` on every request, so resolving
+  // lazily means the first request issued after that script lands already uses
+  // the right origin, with no reconciliation step for callers to remember.
+  //
+  // The setter keeps the SDK's public contract intact (`baseURL` is a writable
+  // field, and the deprecated `baseUrl` alias delegates to it): an explicit
+  // assignment wins from then on.
+  let baseUrlOverride: string | undefined;
+  Object.defineProperty(pb, 'baseURL', {
+    get: () => baseUrlOverride ?? resolveBaseUrl(),
+    set: (value: string) => {
+      baseUrlOverride = value;
+    },
+    enumerable: true,
+    configurable: true,
+  });
 
   // Enable auto cancellation for duplicate requests
   pb.autoCancellation(options.enableAutoCancellation ?? false);
@@ -62,32 +85,10 @@ function createPocketBaseClient(
 }
 
 // Create PocketBase client instance
-const pb = createPocketBaseClient(resolveUrl(), {
+const pb = createPocketBaseClient(resolveUrl, {
   enableAutoCancellation: false,
   requestTimeout: 30000, // 30 second timeout
 });
-
-/**
- * Re-point the singleton at the currently resolvable URL.
- *
- * The URL above is fixed at module load. Next emits its bundle chunks as
- * `<script async>` and React hoists them ABOVE anything the root layout emits,
- * so a chunk can execute — and construct this singleton — before the layout's
- * inline runtime-config script has run. Ordering therefore cannot be the
- * guarantee; this reconciliation is. `AuthProvider` calls it once, above every
- * consumer, and the invariant that makes that sufficient is:
- *
- *   **Nothing may touch `pb` at module scope.** Every importer must use it
- *   inside a render, effect, or callback. As long as that holds, no request can
- *   have gone out on the stale URL by the time this runs.
- *
- * Idempotent, and a no-op when nothing is configured: `resolveUrl()` then
- * returns exactly what the constructor was given.
- */
-export function syncBaseUrl(): void {
-  const url = resolveUrl();
-  if (pb.baseURL !== url) pb.baseURL = url;
-}
 
 // Export the client instance
 export default pb;
