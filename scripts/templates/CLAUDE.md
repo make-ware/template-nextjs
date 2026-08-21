@@ -14,7 +14,7 @@ yarn test             # vitest run (webapp only)
 yarn typecheck        # tsc --noEmit per workspace
 yarn lint             # eslint --fix   (yarn lint:check for no-fix)
 yarn format           # prettier --write
-yarn precommit        # lint + typecheck + format + test — the actual gate
+yarn precommit        # local fix-and-check shortcut: lint + typecheck + format + test
 ```
 
 Single test file / single test name:
