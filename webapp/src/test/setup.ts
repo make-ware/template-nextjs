@@ -1,14 +1,22 @@
-import { afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import * as matchers from '@testing-library/jest-dom/matchers';
 import { expect } from 'vitest';
 import React from 'react';
+import { RUNTIME_CONFIG_KEY } from '@/lib/runtime-config';
 
 // Extend Vitest's expect with jest-dom matchers
 expect.extend(matchers);
 
 // Mock environment variables
 process.env.NEXT_PUBLIC_POCKETBASE_URL = 'http://localhost:8090';
+
+// The server-injected runtime config lives on `globalThis` (see
+// lib/runtime-config.ts), which outlives module resets — clear it before every
+// test so it cannot leak between suites.
+beforeEach(() => {
+  delete (globalThis as Record<string, unknown>)[RUNTIME_CONFIG_KEY];
+});
 
 // Mock Next.js router
 vi.mock('next/navigation', () => ({
