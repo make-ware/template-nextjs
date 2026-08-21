@@ -36,7 +36,7 @@ yarn db:lint        # catch JS that Node accepts but PocketBase's goja runtime r
 yarn typegen        # generate webapp/src/types/pocketbase-types.ts from the schemas
 ```
 
-CI (`.github/workflows/release.yml`) only runs release-please and Docker image builds — it does **not** run lint, typecheck, or tests. `yarn precommit` is the only place those run.
+PR CI (`.github/workflows/ci.yml`) runs lint, formatting, typecheck, tests, migration lint, and a production build. `.github/workflows/release.yml` handles release-please and Docker image publishing.
 
 PocketBase alone: `yarn workspace @template-ware/pb dev` (`./pocketbase serve`). Admin UI at <http://localhost:8090/_/>; first visit creates the superuser.
 
@@ -135,4 +135,4 @@ No live PocketBase is needed — use `src/test/__tests__/fixtures/pocketbase.ts`
 ## Repo quirks
 
 - `pocketbase-zod-schema` is declared in **both** `webapp/package.json` (the schema files import it at runtime) and the root `package.json` (Yarn 4 only exposes a bin to the workspace that declares the dependency, so the root needs it for the `db:*` scripts). Keep the versions matched.
-- CI runs no checks. `.github/workflows/release.yml` does release-please plus multi-arch image builds — lint, typecheck, and tests exist only in `yarn precommit`.
+- `.github/workflows/ci.yml` gates pull requests with lint, formatting, typecheck, tests, migration lint, and a production build. `.github/workflows/release.yml` handles release-please plus multi-arch image builds.
