@@ -40,6 +40,11 @@ ENV NEXT_STANDALONE=1
 # /api/... on the same origin — which assumes a proxy or router in front of both
 # containers forwards /api to PocketBase. Override at build time to point the
 # bundle at an external PocketBase instance instead.
+#
+# WARNING: because it is inlined, setting NEXT_PUBLIC_POCKETBASE_URL at container
+# RUNTIME has NO EFFECT on the browser. For a split deployment where PocketBase
+# is served from its own hostname, run this image with the runtime variable
+# PUBLIC_POCKETBASE_URL=https://pb.example.com instead -- no rebuild required.
 ARG NEXT_PUBLIC_POCKETBASE_URL=/
 ENV NEXT_PUBLIC_POCKETBASE_URL=${NEXT_PUBLIC_POCKETBASE_URL}
 

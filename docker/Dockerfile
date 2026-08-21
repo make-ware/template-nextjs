@@ -54,6 +54,13 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # /api/... on the same origin (proxied to PocketBase by nginx). Override at build
 # time (--build-arg NEXT_PUBLIC_POCKETBASE_URL=https://api.example.com) to point
 # the bundle at an external PocketBase instance.
+#
+# WARNING: because it is inlined, setting NEXT_PUBLIC_POCKETBASE_URL at container
+# RUNTIME (-e / env_file / envFrom) has NO EFFECT on the browser. To point an
+# ALREADY-BUILT image at a different PocketBase origin, set the runtime variable
+# PUBLIC_POCKETBASE_URL instead -- the Next server reads it per request and
+# injects it into the page, so a restart is enough. Supervisor passes the
+# container env through to the Next process, so no plumbing is needed here.
 ARG NEXT_PUBLIC_POCKETBASE_URL=/
 ENV NEXT_PUBLIC_POCKETBASE_URL=${NEXT_PUBLIC_POCKETBASE_URL}
 

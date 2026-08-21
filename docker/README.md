@@ -84,7 +84,6 @@ Pass at `docker run` time:
 docker run -d --name template-ware \
   -p 80:80 \
   -v $PWD/data:/data \
-  -e NEXT_PUBLIC_POCKETBASE_URL=https://your-domain/api \
   -e NODE_ENV=production \
   -e POCKETBASE_ADMIN_EMAIL=admin@your-domain \
   -e POCKETBASE_ADMIN_PASSWORD='a-strong-password' \
@@ -92,6 +91,55 @@ docker run -d --name template-ware \
 ```
 
 See [.env.example](../.env.example) for the full list.
+
+### The PocketBase URL the browser uses
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PUBLIC_POCKETBASE_URL` | _(unset)_ | **Runtime** public URL for PocketBase, used by the browser. Leave unset for same-origin deployments; set it when PocketBase lives on a separate hostname. |
+| `NEXT_PUBLIC_POCKETBASE_URL` | `/` (baked at build) | **Build-time only** default for the above. Inlined into the browser bundle by `docker build`; setting it at runtime does nothing for the browser. |
+
+> [!IMPORTANT]
+> **`NEXT_PUBLIC_*` is build-time only — use `PUBLIC_POCKETBASE_URL` at runtime.**
+> Next.js inlines any `NEXT_PUBLIC_`-prefixed variable into the browser bundle at
+> `docker build` time (the `ARG`/`ENV NEXT_PUBLIC_POCKETBASE_URL` step in the `builder`
+> stage). Setting `NEXT_PUBLIC_POCKETBASE_URL` at **runtime** — via `-e`, `env_file`,
+> `envFrom`, whatever — does **not** change what the browser uses.
+>
+> To point an **already-built image** at a different PocketBase origin, set
+> **`PUBLIC_POCKETBASE_URL`**. It is deliberately *not* `NEXT_PUBLIC_`-prefixed, so Next
+> never inlines it: the Next server reads it per request and injects it into the page as
+> an inline `<script>`, and the client picks it up before issuing any PocketBase request.
+> A restart is enough — no rebuild, no `--build-arg`. Supervisor passes the container
+> environment through to the Next process, so nothing else needs configuring.
+>
+> `NEXT_PUBLIC_POCKETBASE_URL` is **not** honoured as a runtime fallback, by design.
+> [.env.example](../.env.example) has always shipped an inert `http://localhost:8090`, and
+> operators copy it into runtime env knowing it does nothing; honouring it now would
+> silently break every working same-origin deployment. Opting in is explicit.
+>
+> Leaving `PUBLIC_POCKETBASE_URL` unset preserves today's behaviour exactly: the image
+> bakes `"/"`, nginx proxies `/api/` and `/_/` on the same origin, and the relative URL
+> resolves against the page origin.
+>
+> **Split-origin prerequisites.** Pointing the browser at a separate PocketBase hostname
+> is a deployment change as well as a config one: PocketBase must allow the webapp's
+> origin via CORS, and the browser needs direct access to `/api/realtime` on that host
+> for the realtime SSE stream.
+>
+> **If you add a Content-Security-Policy.** The value travels in an inline `<script>`,
+> so a policy without `unsafe-inline` for `script-src` blocks it and the browser falls
+> back to the build-time URL. `nginx.conf` ships no CSP today; if you add one, give the
+> tag a nonce or hash.
+
+```bash
+# Retarget a running image at a PocketBase on its own hostname — no rebuild
+docker run -d --name template-ware \
+  -p 80:80 \
+  -e PUBLIC_POCKETBASE_URL=https://pb.example.com \
+  -v $PWD/data:/data \
+  template-ware
+```
 
 ### Superuser provisioning
 

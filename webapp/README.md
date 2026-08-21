@@ -231,15 +231,42 @@ The PocketBase client is configured in `lib/pocketbase.ts`:
 // webapp/src/lib/pocketbase.ts
 import PocketBase from 'pocketbase';
 import type { TypedPocketBase } from './types';
+import { readRuntimeConfig } from './runtime-config';
 
-const pb = new PocketBase(
-  process.env.NEXT_PUBLIC_POCKETBASE_URL || 'http://localhost:8090'
-) as TypedPocketBase;
+export function resolveUrl(): string {
+  return (
+    // Server-injected runtime override (PUBLIC_POCKETBASE_URL)
+    readRuntimeConfig()?.pocketbaseUrl ||
+    // Inlined by `next build`
+    process.env.NEXT_PUBLIC_POCKETBASE_URL ||
+    'http://localhost:8090'
+  );
+}
+
+const pb = createPocketBaseClient(resolveUrl, { ... });
+
+// Inside createPocketBaseClient: resolve on read, not at construction.
+Object.defineProperty(pb, 'baseURL', {
+  get: () => baseUrlOverride ?? resolveBaseUrl(),
+  set: (value) => { baseUrlOverride = value; },
+  enumerable: true,
+  configurable: true,
+});
 
 export default pb;
 ```
 
 Always use this singleton instance - never create new PocketBase instances.
+
+**The base URL resolves on every read.** React hoists Next's async bundle chunks above the
+root layout's inline runtime-config script, so a chunk can construct the singleton before
+the injected URL exists. Rather than make every caller remember a reconciliation step,
+`baseURL` is a getter over `resolveUrl()` — and the SDK consults it inside `buildURL` on
+every request, so the first request made after the script lands already goes to the right
+origin. An explicit `pb.baseURL = ...` assignment still wins from then on.
+
+The one case this cannot rescue is a request _fired_ at module scope, before the inline
+script has executed. Keep data access inside renders, effects, and callbacks.
 
 ## Development Best Practices
 
@@ -316,7 +343,18 @@ Create `.env.local` in the webapp directory:
 NEXT_PUBLIC_POCKETBASE_URL=http://localhost:8090
 ```
 
-Use `NEXT_PUBLIC_` prefix for client-side environment variables.
+Use the `NEXT_PUBLIC_` prefix for client-side environment variables that are fixed at
+build time — Next inlines them into the browser bundle, so they cannot change afterwards.
+
+For a client-side value an operator must be able to change **without a rebuild**, use the
+unprefixed runtime channel instead: `PUBLIC_POCKETBASE_URL` is read from `process.env` by
+the root layout per request and injected into the page. See
+`src/lib/runtime-config.ts` for the contract, and the root
+[README](../README.md#runtime-config-the-public_-pattern) for the pattern.
+
+Note that it belongs in `webapp/.env.local` (or the container env), **not** the repo-root
+`.env`: `next dev` runs with its working directory here, so Next loads `webapp/.env*` and
+never the repo-root file.
 
 ## Available Scripts
 
@@ -469,7 +507,8 @@ export function PostList() {
 1. Connect your repository to Vercel
 2. Set the root directory to `webapp/`
 3. Set environment variables:
-   - `NEXT_PUBLIC_POCKETBASE_URL` - Your PocketBase instance URL
+   - `NEXT_PUBLIC_POCKETBASE_URL` - Your PocketBase instance URL (build-time; inlined into the bundle)
+   - `PUBLIC_POCKETBASE_URL` - optional runtime override, changeable without a rebuild
 4. Deploy
 
 ### Other Platforms
@@ -481,7 +520,7 @@ yarn workspace webapp build
 # Deploy the webapp/.next directory
 ```
 
-Make sure to set the correct `NEXT_PUBLIC_POCKETBASE_URL` environment variable for your production PocketBase instance.
+Make sure to set the correct `NEXT_PUBLIC_POCKETBASE_URL` environment variable for your production PocketBase instance — it is inlined at build time, so it has to be right _before_ you build. To retarget an already-built deployment, set `PUBLIC_POCKETBASE_URL` at runtime instead.
 
 ## Troubleshooting
 
@@ -505,7 +544,9 @@ If imports fail:
 
 If authentication doesn't persist:
 
-1. Check that `NEXT_PUBLIC_POCKETBASE_URL` is set correctly
+1. Check that `NEXT_PUBLIC_POCKETBASE_URL` was set correctly **at build time** (or that
+   `PUBLIC_POCKETBASE_URL` is set at runtime) — check `globalThis.__APP_RUNTIME_CONFIG__`
+   and the PocketBase requests in the browser's network tab to see which URL is in play
 2. Verify PocketBase is running and accessible
 3. Check browser console for CORS errors
 4. Ensure cookies are enabled in the browser
